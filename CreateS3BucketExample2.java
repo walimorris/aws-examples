@@ -11,7 +11,7 @@ import java.util.List;
 
 
 /**
- * This example builds on 'ReadingS3Content.java'. This example creates a copy of the original existing 
+ * This example builds on 'ReadingS3ContentExample1.java'. This example creates a copy of the original existing 
  * ogflakes-repo-copy bucket (made for example purposes) and creates a new backup bucket for this original.
  * The backup bucket is assigned the same policies as the original and later we will write a replication
  * function to automate transferring the objects in the original bucket to the backup.
