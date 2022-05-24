@@ -10,6 +10,8 @@ import java.util.List;
 
 
 /**
+ * NOTE: You should have AWS credentials active through AWS CLI.
+ *
  * This example creates an AmazonS3Client (with credentials from AWS CLI), finds a specific S3Bucket, iterates the objects in that 
  * S3Bucket and looks for a specific file. Once that file is found, the contents of that file is parsed to a S3ObjectInputStream 
  * and fed to a BufferedReader in order to build a String containing that files content. The final content is than printed to STDOUT
@@ -17,28 +19,28 @@ import java.util.List;
  */
 public class App {
     public static void main( String[] args ) {
-        final String OG_FLAKES_REPO = "ogflakes-repo";
-        final String SNS_EMAIL_SOURCE_CODE_FILE = "src/main/java/com/morris/ogflakes/model/SnsEmail.java";
+        final String MAINBUCKET = "**Bucket Name***";
+        final String SNS_EMAIL_SOURCE_CODE_FILE = "***Path to source file in bucket***";
         AmazonS3 amazonS3Client = AmazonS3ClientBuilder.standard()
-                .withRegion(Regions.US_WEST_2)
+                .withRegion(Regions.US_WEST_2) // region where your bucket lives
                 .build();
 
         List<Bucket> buckets = amazonS3Client.listBuckets();
-        Bucket ogFlakesBucket = null;
+        Bucket mainBucket = null;
         for (Bucket bucket : buckets) {
-            if (bucket.getName().equals(OG_FLAKES_REPO)) {
+            if (bucket.getName().equals(MAINBUCKET)) {
                 System.out.println(bucket.getName() + " found!");
-                ogFlakesBucket = bucket;
+                mainBucket = bucket;
             }
         }
         S3ObjectInputStream snsSourceCodeInputStream = null;
-        if (ogFlakesBucket != null) {
+        if (mainBucket != null) {
             try {
-                ObjectListing ogFlakesBucketObjectListings = amazonS3Client.listObjects(ogFlakesBucket.getName());
-                if (ogFlakesBucketObjectListings.getObjectSummaries().size() > 0) {
-                    for (S3ObjectSummary summary : ogFlakesBucketObjectListings.getObjectSummaries()) {
+                ObjectListing bucketObjectListings = amazonS3Client.listObjects(mainBucket.getName());
+                if (bucketObjectListings.getObjectSummaries().size() > 0) {
+                    for (S3ObjectSummary summary : bucketObjectListings.getObjectSummaries()) {
                         if (summary.getKey().equals(SNS_EMAIL_SOURCE_CODE_FILE)) {
-                            S3Object sourceCodeObject = amazonS3Client.getObject(OG_FLAKES_REPO, summary.getKey());
+                            S3Object sourceCodeObject = amazonS3Client.getObject(MAINBUCKET, summary.getKey());
                             snsSourceCodeInputStream = sourceCodeObject.getObjectContent();
                             break;
                         }
