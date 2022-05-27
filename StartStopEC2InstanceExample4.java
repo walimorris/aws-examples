@@ -104,7 +104,7 @@ public class App {
         }
 
         final String UBUNTU_AMI = "ami-0ee8244746ec5d6d4";
-        final String KEY_NAME = "sodiff-kp";
+        final String KEY_NAME = "***Key Pair Name***";
         String defaultEC2Instance = launchEC2InstanceInDefaultVPC(amazonEC2Client, UBUNTU_AMI, KEY_NAME);
         if (defaultEC2Instance != null) {
             System.out.println("EC2 instance with id '" + defaultEC2Instance + "' started");
