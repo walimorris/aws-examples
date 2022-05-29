@@ -26,8 +26,9 @@ import java.util.zip.GZIPInputStream;
  * file and parse its content to STDOUT. What's interesting about this is that CloudTrail logs will be 
  * stored in S3 buckets as GZIP files with its content in json format. Pretty cool since we can then do 
  * something with this information. This shows how awesome, thoughtful and powerful AWS is; especially with 
- * information interchange. We could do many things with this information such as building notifications, 
- * alerts, analytics and much more.
+ * exchanging information. We could do many things with this information such as building notifications, 
+ * alerts, analytics and much more. So how are we supposed to read an actually gzip file? Java solves this 
+ * small problem with GZIPInputStreams!
  */
 public class Main {
     public static final String CLOUD_TRAIL_LOGS = "aws-cloudtrail-logs";
