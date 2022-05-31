@@ -32,7 +32,7 @@ import java.util.List;
  */
 public class LogSNSHandler implements RequestHandler<S3Event, String> {
 
-    private static final String CLOUD_TRAIL_LOGS = "***S3 bucket name to cloud trail logs";
+    private static final String CLOUD_TRAIL_LOGS = "***S3 bucket name to cloud trail logs***";
     private static final String SNS_TOPIC_ARN = "***SNS Topic ARN***";
 
     @Override
