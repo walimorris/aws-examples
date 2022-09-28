@@ -4,7 +4,17 @@ import com.amazonaws.services.ec2.AmazonEC2Client;
 import com.amazonaws.services.ec2.model.*;
 
 import java.util.List;
-
+/**
+ * This program utilizes the following InstanceMetaData.java class and exposes a single instance
+ * to pull instance level metadata or any data provided by the sinngle instance. 
+ * 
+ * Lifecycle: 
+ * 1. Instantiate and start a single instance
+ * 2. Thread sleeps in order to allow time for instance startup completion
+ * 3. Stop the instance
+ * 4. Because the instance is only stopped, it allows entity to pull metadata (you could start back up again if you wanted to).
+ * 5. Terminate the instance
+ */
 public class App {
     public static void main( String[] args ) {
         InstanceMetaData instance = new InstanceMetaData(InstanceType.T1Micro, "ami-0ee8244746ec5d6d4");
@@ -15,7 +25,8 @@ public class App {
             System.out.println("InstancePrivateIPAddress: " + instance.getInstancePrivateIpAddress());
             System.out.println("InstanceType: " + instance.getInstanceType());
 
-            // wait 5 minutes before stopping instance
+            // wait 5 minutes before stopping instance and give time
+            // for instance to complete initialization
             try {
                 TimeUnit.SECONDS.sleep(300);
                 instance.stopInstance();
@@ -96,13 +107,27 @@ public class InstanceMetaData {
         }
     }
 
+    /**
+     * States:
+     * custom/ 1 : unknown
+     * 0 : pending
+     * 16 : running
+     * 32 : shutting down
+     * 48 : terminated
+     * 64: stopping
+     * 80 : stopped
+     */
     public void terminateInstance() {
-        if (this.isRunning) {
+        int code = getInstateStateCode();
+        System.out.println("code: " + code);
+
+        // stopping or stopped
+        if (code != 48) {
             TerminateInstancesRequest terminateInstancesRequest = new TerminateInstancesRequest().withInstanceIds(this.instanceId);
             TerminateInstancesResult terminateInstancesResult = this.ec2Client.terminateInstances(terminateInstancesRequest);
             String terminatedInstanceId = terminateInstancesResult.getTerminatingInstances().get(0).getInstanceId();
             if (terminatedInstanceId.equals(this.instanceId)) {
-                System.out.printf("stopping instance with id: '%s'%n", terminatedInstanceId);
+                System.out.printf("terminating instance with id: '%s'%n", terminatedInstanceId);
                 this.isRunning = false;
             }
         } else {
@@ -148,5 +173,12 @@ public class InstanceMetaData {
             }
         }
         return this.instance;
+    }
+
+    private int getInstateStateCode() {
+        if (this.instance != null) {
+            return this.instance.getState().getCode();
+        }
+        return 1;
     }
 }
