@@ -73,14 +73,25 @@ public class InstanceMetaData {
             try {
                 RunInstancesRequest runInstancesRequest = new RunInstancesRequest(this.ami, 1, 1)
                         .withInstanceType(this.instanceType);
+                
                 RunInstancesResult runInstancesResult = this.ec2Client.runInstances(runInstancesRequest);
 
-                this.instanceId = runInstancesResult.getReservation().getInstances().get(0).getInstanceId();
-                this.instancePrivateIpAddress = runInstancesResult.getReservation().getInstances().get(0).getPrivateIpAddress();
+                this.instanceId = runInstancesResult.getReservation()
+                    .getInstances()
+                    .get(0)
+                    .getInstanceId();
+                
+                this.instancePrivateIpAddress = runInstancesResult.getReservation()
+                    .getInstances()
+                    .get(0)
+                    .getPrivateIpAddress();
 
                 StartInstancesRequest startInstancesRequest = new StartInstancesRequest().withInstanceIds(this.instanceId);
                 StartInstancesResult startInstancesResult = this.ec2Client.startInstances(startInstancesRequest);
-                String startInstanceId = startInstancesResult.getStartingInstances().get(0).getInstanceId();
+                String startInstanceId = startInstancesResult.getStartingInstances()
+                    .get(0)
+                    .getInstanceId();
+                
                 if (startInstanceId.equals(this.instanceId)) {
                     this.isRunning = true;
                     this.instance = describeInstance(this.instanceId);
@@ -97,7 +108,10 @@ public class InstanceMetaData {
         if (this.isRunning) {
             StopInstancesRequest stopInstancesRequest = new StopInstancesRequest().withInstanceIds(this.instanceId);
             StopInstancesResult stopInstancesResult = this.ec2Client.stopInstances(stopInstancesRequest);
-            String stoppedInstanceId = stopInstancesResult.getStoppingInstances().get(0).getInstanceId();
+            String stoppedInstanceId = stopInstancesResult.getStoppingInstances()
+                .get(0)
+                .getInstanceId();
+            
             if (stoppedInstanceId.equals(this.instanceId)) {
                 System.out.printf("stopping instance with id: '%s'%n", stoppedInstanceId);
                 this.isRunning = false;
@@ -125,7 +139,10 @@ public class InstanceMetaData {
         if (code != 48) {
             TerminateInstancesRequest terminateInstancesRequest = new TerminateInstancesRequest().withInstanceIds(this.instanceId);
             TerminateInstancesResult terminateInstancesResult = this.ec2Client.terminateInstances(terminateInstancesRequest);
-            String terminatedInstanceId = terminateInstancesResult.getTerminatingInstances().get(0).getInstanceId();
+            String terminatedInstanceId = terminateInstancesResult.getTerminatingInstances()
+                .get(0)
+                .getInstanceId();
+            
             if (terminatedInstanceId.equals(this.instanceId)) {
                 System.out.printf("terminating instance with id: '%s'%n", terminatedInstanceId);
                 this.isRunning = false;
