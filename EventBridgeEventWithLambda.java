@@ -183,9 +183,11 @@ public class MonitoredInstanceEvent {
             PublishRequest publishRequest = new PublishRequest()
                     .withTopicArn(SNS_TOPIC_ARN)
                     .withMessage(message);
+            
             PublishResult publishResult = snsClient.publish(publishRequest);
-            snsClient.shutdown();
+            snsClient.shutdown();          
             return publishResult;
+            
         } catch (AmazonSNSException e) {
             logger.log(String.format("Unable to process notification for topic: %s", SNS_TOPIC_ARN));
             if (snsClient != null) {
