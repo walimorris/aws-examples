@@ -83,9 +83,14 @@ public class App {
                             // new destination bucket(backup) then assign the destination config rule back to the origin bucket's replication config. This way we're not building
                             // an entirely new replication config
                             BucketReplicationConfiguration originalBucketReplicationConfiguration = amazonS3Client.getBucketReplicationConfiguration(originalBucket.getName());
-                            ReplicationDestinationConfig destinationConfig = originalBucketReplicationConfiguration.getRules().get(originalReplicationRuleName).getDestinationConfig();
+                            ReplicationDestinationConfig destinationConfig = originalBucketReplicationConfiguration.getRules()
+                                .get(originalReplicationRuleName)
+                                .getDestinationConfig();
+                            
                             destinationConfig.setBucketARN(destinationBucketARN);
-                            originalBucketReplicationConfiguration.getRules().get(originalReplicationRuleName).setDestinationConfig(destinationConfig);
+                            originalBucketReplicationConfiguration.getRules()
+                                .get(originalReplicationRuleName)
+                                .setDestinationConfig(destinationConfig);
 
                             // Save the replication rule to the source bucket.
                             amazonS3Client.setBucketReplicationConfiguration(sourceBucketName,
@@ -203,11 +208,17 @@ public class App {
                     .withKeyName(keyName);
 
             RunInstancesResult runInstancesResult = amazonEC2.runInstances(runRequest);
-            String instanceId = runInstancesResult.getReservation().getInstances().get(0).getInstanceId();
+            String instanceId = runInstancesResult.getReservation()
+                .getInstances()
+                .get(0)
+                .getInstanceId();
 
             StartInstancesRequest startInstancesRequest = new StartInstancesRequest().withInstanceIds(instanceId);
             StartInstancesResult startInstancesResult = amazonEC2.startInstances(startInstancesRequest);
-            return startInstancesResult.getStartingInstances().get(0).getInstanceId();
+            return startInstancesResult.getStartingInstances()
+                .get(0)
+                .getInstanceId();
+            
         } catch (Exception e) {
             System.out.println("Error starting Ec2 instance");
             return null;
