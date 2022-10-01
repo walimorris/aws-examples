@@ -6,18 +6,28 @@ import com.amazonaws.services.lambda.runtime.events.models.s3.S3EventNotificatio
 import com.amazonaws.services.lambda.runtime.events.models.s3.S3EventNotification.S3ObjectEntity;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3ClientBuilder;
-import com.amazonaws.services.s3.model.GetObjectRequest;
-import com.amazonaws.services.s3.model.S3Object;
+import com.amazonaws.services.s3.model.*;
+import com.groupdocs.redaction.Redaction;
+import com.groupdocs.redaction.RedactionStatus;
+import com.groupdocs.redaction.Redactor;
+import com.groupdocs.redaction.RedactorChangeLog;
+import com.groupdocs.redaction.options.LoadOptions;
+import com.groupdocs.redaction.options.RedactorSettings;
+import com.groupdocs.redaction.options.SaveOptions;
+import com.groupdocs.redaction.redactions.RegexRedaction;
+import com.groupdocs.redaction.redactions.ReplacementOptions;
 import com.itextpdf.text.Document;
 import com.itextpdf.text.DocumentException;
 import com.itextpdf.text.Image;
 import com.itextpdf.text.pdf.PdfWriter;
 import org.apache.commons.io.IOUtils;
 
+import java.awt.*;
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 public class ConvertDocumentEvent {
@@ -28,39 +38,64 @@ public class ConvertDocumentEvent {
     private final String TIFF = ".tiff";
     private final String PNG = ".png";
     private final String TMP = "/tmp/";
+    private final String REDACTED = "redacted/";
     private final String BUCKET = System.getenv("BUCKET_NAME");
 
-    public String handleRequest(S3Event event, Context context) throws IOException, DocumentException {
+    public String handleRequest(S3Event event, Context context) throws Exception {
         LambdaLogger logger = context.getLogger();
         List<String> imageFiles = Arrays.asList(JPEG, JPG, GIF, TIFF, PNG);
 
         S3EventNotificationRecord eventRecord = event.getRecords().get(0);
         S3ObjectEntity file = eventRecord.getS3().getObject();
         String originalFileName = file.getKey();
+        logger.log("original file name: " + originalFileName);
         S3Object fileObject = getS3Object(getS3Client(), BUCKET, originalFileName);
+
+        boolean containsRedactedRefinement = containsRedactedRefinementTag(originalFileName);
+
         String fileExtension = getFileExtension(originalFileName);
         String fileNameWithoutExtension = getFileNameWithoutExtension(originalFileName);
 
         if (!fileExtension.equalsIgnoreCase(PDF)) {
+            convertOriginalObjectToPDF(imageFiles, fileExtension, originalFileName, fileObject, fileNameWithoutExtension);
 
-            // case: document is uploaded as an image file. Often users will upload pictures
-            // of documents in image format, and here we want to convert this image file to
-            // a proper pdf for redacting info later
-            if (imageFiles.contains(fileExtension)) {
-                // send S3Object to tmp dir
-                File s3ObjectAsFile = new File(TMP + originalFileName);
-
-                storeS3ObjectAsFile(s3ObjectAsFile, fileObject);
-                File convertedFile = convertImageFileToPDF(s3ObjectAsFile.getPath(), fileNameWithoutExtension);
-                if (convertedFile != null) {
-
-                    // converted file is sitting in /tmp now we need to write it to s3
-                    // and delete the original non .pdf file from s3
-                    putConvertedFileS3(convertedFile, originalFileName);
-                }
-            }
+        } else if (fileExtension.equals(PDF) && !containsRedactedRefinement) {
+            redactS3Object(originalFileName, fileObject);
         }
         return "success";
+    }
+
+    private void convertOriginalObjectToPDF(List<String> imageFileTypes, String fileExtension, String originalFileName,
+                                            S3Object fileObject, String fileNameWithoutExtension) throws IOException, DocumentException {
+
+        // case: document is uploaded as an image file. Often users will upload pictures
+        // of documents in image format, and here we want to convert this image file to
+        // a proper pdf for redacting info later
+        if (imageFileTypes.contains(fileExtension)) {
+            // send S3Object to tmp dir
+            File s3ObjectAsFile = new File(TMP + originalFileName);
+
+            storeS3ObjectAsFile(s3ObjectAsFile, fileObject);
+            File convertedFile = convertImageFileToPDF(s3ObjectAsFile.getPath(), fileNameWithoutExtension);
+            if (convertedFile != null) {
+
+                // converted file is sitting in /tmp now we need to write it to s3
+                // and delete the original non .pdf file from s3
+                putConvertedFileS3(convertedFile, originalFileName);
+            }
+        }
+    }
+
+    private void redactS3Object(String originalFileName, S3Object fileObject) throws Exception {
+        File s3ObjectAsFile = new File(TMP + originalFileName);
+        storeS3ObjectAsFile(s3ObjectAsFile, fileObject);
+
+        // pdf file is stored in /tmp, now we'll need to redact based on some PII
+        // properties that need to be removed
+        File redactedFile = redactPII(s3ObjectAsFile);
+
+        // write redacted file to s3
+        putRedactedFileToS3(redactedFile, originalFileName);
     }
 
     /**
@@ -169,9 +204,19 @@ public class ConvertDocumentEvent {
      * @param originalFileName {@link String} file name of original converted file
      */
     private void putConvertedFileS3(File convertedFile, String originalFileName) {
-       getS3Client().putObject(BUCKET, convertedFile.getName(), convertedFile);
-       deleteFileS3(originalFileName);
+       PutObjectRequest putObjectRequest = new PutObjectRequest(BUCKET, convertedFile.getName(), convertedFile)
+               .withTagging(new ObjectTagging(Collections.singletonList(tagWithImageRefinement())));
 
+       getS3Client().putObject(putObjectRequest);
+       deleteFileS3(originalFileName);
+    }
+
+    private void putRedactedFileToS3(File redactedFile, String originalFileName) {
+        String redactedFileName = REDACTED + originalFileName;
+        PutObjectRequest putObjectRequest = new PutObjectRequest(BUCKET, redactedFileName, redactedFile)
+                .withTagging(new ObjectTagging(Collections.singletonList(tagWithRedactedRefinement())));
+
+        getS3Client().putObject(putObjectRequest);
     }
 
     /**
@@ -181,5 +226,44 @@ public class ConvertDocumentEvent {
      */
     private void deleteFileS3(String fileName) {
         getS3Client().deleteObject(BUCKET, fileName);
+    }
+
+    private File redactPII(File file) throws Exception {
+        RedactorSettings settings = new RedactorSettings();
+        try (Redactor redactor = new Redactor(file.getPath(), new LoadOptions(), settings)) {
+            ReplacementOptions marker = new ReplacementOptions(Color.BLACK);
+            Redaction[] redactions = new Redaction[] {
+                    new RegexRedaction("\\d{4}", marker) // card number parts
+            };
+
+            RedactorChangeLog result = redactor.apply(redactions);
+            if (result.getStatus() != RedactionStatus.Failed) {
+                redactor.save(new SaveOptions(false, "redacted"));
+            }
+        }
+        return file;
+    }
+
+    private Tag tagWithRedactedRefinement() {
+        return new Tag("refinement", "redacted");
+    }
+
+    private Tag tagWithImageRefinement() {
+        return new Tag("refinement", "imageConversion");
+    }
+
+    private boolean containsRedactedRefinementTag(String originalFileName) {
+        boolean containsRedactedRefinement = false;
+        GetObjectTaggingRequest taggingRequest = new GetObjectTaggingRequest(BUCKET, originalFileName);
+        GetObjectTaggingResult taggingResult = getS3Client().getObjectTagging(taggingRequest);
+        List<Tag> tagSet = taggingResult.getTagSet();
+
+        for (Tag tag : tagSet) {
+            if (tag.getValue().equals("redacted")) {
+                containsRedactedRefinement = true;
+                break;
+            }
+        }
+        return containsRedactedRefinement;
     }
 }
