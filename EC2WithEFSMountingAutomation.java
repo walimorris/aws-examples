@@ -4,25 +4,58 @@ import com.amazonaws.services.ec2.AmazonEC2Client;
 import com.amazonaws.services.ec2.model.DescribeInstancesRequest;
 import com.amazonaws.services.ec2.model.DescribeInstancesResult;
 import com.amazonaws.services.ec2.model.Instance;
+import com.amazonaws.services.ec2.model.Reservation;
 import com.amazonaws.services.elasticfilesystem.AmazonElasticFileSystem;
 import com.amazonaws.services.elasticfilesystem.AmazonElasticFileSystemClient;
 import com.amazonaws.services.elasticfilesystem.model.*;
+import com.amazonaws.services.simplesystemsmanagement.AWSSimpleSystemsManagement;
+import com.amazonaws.services.simplesystemsmanagement.AWSSimpleSystemsManagementClient;
+import com.amazonaws.services.simplesystemsmanagement.model.*;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 public class App {
-    public static void main( String[] args ) {
-        String fileSystemName = "xxx"; // args[0]
+    public static void main( String[] args ) throws InterruptedException {
+        System.out.println(args.length);
+
+        String fileSystemName = args[0]; // args[0]
 //        List<String> addresses = new ArrayList<>(Arrays.asList(args).subList(1, args.length));
         Map<String, String> efs = getCustomEFSInfo(fileSystemName);
         List<MountTargetDescription> targetDescriptions = mountTargetDescriptions(efs);
         Map<String, String> mountTargets = getMountTargetsDetails(targetDescriptions);
-        Map<String, String> instanceMap = getInstanceMap("xxxxxxxxx"); // will be a list of instance ids
 
-        // now i figure out how to mount 
-        
+        List<String> instanceIds = makeListOfInstanceIds(args);
+        Map<String, String> instanceMap = getInstanceMap(instanceIds); // i-xxxxxxx : region
+
+        // install NFS client
+        SendCommandResult installNFSClientResult = installNFSClientCommand(instanceIds);
+        String commandId = installNFSClientResult.getCommand().getCommandId();
+
+        ListCommandInvocationsRequest commandInvocationsRequest = new ListCommandInvocationsRequest()
+                .withCommandId(commandId)
+                .withDetails(true);
+
+        // let's sleep, so we have time to process the command
+        System.out.println("processing requests");
+        TimeUnit.MINUTES.sleep(3);
+
+        ListCommandInvocationsResult commandInvocationsResult = getSSMClient().listCommandInvocations(commandInvocationsRequest);
+        List<CommandInvocation> invocations = commandInvocationsResult.getCommandInvocations();
+        for (CommandInvocation invocation : invocations) {
+            String status = invocation.getStatus();
+            System.out.printf("install nfs-client on instance: %s is '%s'%n", invocation.getInstanceId(), status);
+            System.out.println(invocation.getCommandPlugins().get(0).getOutput());
+        }
+    }
+
+    private static AWSSimpleSystemsManagement getSSMClient() {
+        return AWSSimpleSystemsManagementClient.builder()
+                .withRegion(Regions.US_WEST_2)
+                .build();
     }
 
     private static AmazonEC2 getEC2Client() {
@@ -37,23 +70,35 @@ public class App {
                 .build();
     }
 
-    private static Map<String, String> getInstanceMap(String instanceId) {
+    private static List<String> makeListOfInstanceIds(String[] args) {
+        List<String> instanceIds = new ArrayList<>();
+        for (int i = 1; i < args.length; i++) {
+            instanceIds.add(args[i]);
+            System.out.println(args[i]);
+        }
+        return instanceIds;
+    }
+
+    private static Map<String, String> getInstanceMap(List<String> instanceIds) {
+        AmazonEC2 amazonEC2 = getEC2Client();
         Map<String, String> instanceMap = new HashMap<>();
         DescribeInstancesRequest describeInstancesRequest = new DescribeInstancesRequest()
-                .withInstanceIds(instanceId);
-        DescribeInstancesResult describeInstancesResult = getEC2Client().describeInstances(describeInstancesRequest);
+                .withInstanceIds(instanceIds);
+        DescribeInstancesResult describeInstancesResult = amazonEC2.describeInstances(describeInstancesRequest);
 
-        List<Instance> instances = describeInstancesResult.getReservations().get(0).getInstances();
-        for (Instance instance : instances) {
-            instanceMap.put("instanceId", instance.getInstanceId());
-            instanceMap.put("availabilityZone", instance.getPlacement().getAvailabilityZone());
+        for (Reservation reservation : describeInstancesResult.getReservations()) {
+            for (Instance instance : reservation.getInstances()) {
+                instanceMap.put(instance.getInstanceId(), instance.getPlacement().getAvailabilityZone());
+            }
         }
+        amazonEC2.shutdown();
         return instanceMap;
     }
 
     private static Map<String, String> getCustomEFSInfo(String fileSystemName) {
+        AmazonElasticFileSystem amazonEFS = getEFSClient();
         Map<String, String> fileSystemInfo = new HashMap<>();
-        DescribeFileSystemsResult fileSystemDescriptionResult = getEFSClient().describeFileSystems();
+        DescribeFileSystemsResult fileSystemDescriptionResult = amazonEFS.describeFileSystems();
         List<FileSystemDescription> fileSystemDescriptions = fileSystemDescriptionResult.getFileSystems();
         for (FileSystemDescription fileSystemDescription : fileSystemDescriptions) {
             if (fileSystemDescription.getName().equals(fileSystemName)) {
@@ -63,13 +108,16 @@ public class App {
                 fileSystemInfo.put("numberOfMountTargets", String.valueOf(fileSystemDescription.getNumberOfMountTargets()));
             }
         }
+        amazonEFS.shutdown();
         return fileSystemInfo;
     }
 
     private static List<MountTargetDescription> mountTargetDescriptions(Map<String, String> fileSystemInfo) {
+        AmazonElasticFileSystem amazonEFS = getEFSClient();
         DescribeMountTargetsRequest mountTargetsRequest = new DescribeMountTargetsRequest()
                 .withFileSystemId(fileSystemInfo.get("fileSystemId"));
-        DescribeMountTargetsResult mountTargetsResult = getEFSClient().describeMountTargets(mountTargetsRequest);
+        DescribeMountTargetsResult mountTargetsResult = amazonEFS.describeMountTargets(mountTargetsRequest);
+        amazonEFS.shutdown();
         return mountTargetsResult.getMountTargets();
     }
 
@@ -80,5 +128,22 @@ public class App {
             targets.put(description.getAvailabilityZoneName(), description.getIpAddress());
         }
         return targets;
+    }
+
+    private static SendCommandResult installNFSClientCommand(List<String> instanceIds) {
+        AWSSimpleSystemsManagement amazonSSM = getSSMClient();
+        String installCommand = "sudo yum -y install nfs-utils";
+        List<String> commands = new ArrayList<>();
+        commands.add(installCommand);
+        Map<String, List<String>> params = new HashMap<>();
+
+        params.put("commands", commands);
+
+        SendCommandRequest sendCommandRequest = new SendCommandRequest()
+                .withInstanceIds(instanceIds)
+                .withDocumentName("AWS-RunShellScript")
+                .withParameters(params);
+
+        return amazonSSM.sendCommand(sendCommandRequest);
     }
 }
