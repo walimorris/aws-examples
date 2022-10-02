@@ -31,24 +31,13 @@ public class App {
         List<String> instanceIds = makeListOfInstanceIds(args);
         Map<String, String> instanceMap = getInstanceMap(instanceIds); // i-xxxxxxx : region
 
-        // install NFS client
+        // install and ensure NFS client is active
         SendCommandResult installNFSClientResult = installNFSClientCommand(instanceIds);
         String commandId = installNFSClientResult.getCommand().getCommandId();
+        boolean isNFSInstallSuccessful = isNFSInstallSuccess(commandId);
 
-        ListCommandInvocationsRequest commandInvocationsRequest = new ListCommandInvocationsRequest()
-                .withCommandId(commandId)
-                .withDetails(true);
-
-        // let's sleep, so we have time to process the command
-        System.out.println("processing requests");
-        TimeUnit.MINUTES.sleep(3);
-
-        ListCommandInvocationsResult commandInvocationsResult = getSSMClient().listCommandInvocations(commandInvocationsRequest);
-        List<CommandInvocation> invocations = commandInvocationsResult.getCommandInvocations();
-        for (CommandInvocation invocation : invocations) {
-            String status = invocation.getStatus();
-            System.out.printf("install nfs-client on instance: %s is '%s'%n", invocation.getInstanceId(), status);
-            System.out.println(invocation.getCommandPlugins().get(0).getOutput());
+        if (isNFSInstallSuccessful) {
+            System.out.println("systems are go.");
         }
     }
 
@@ -76,6 +65,7 @@ public class App {
             instanceIds.add(args[i]);
             System.out.println(args[i]);
         }
+        System.out.println(instanceIds);
         return instanceIds;
     }
 
@@ -145,5 +135,31 @@ public class App {
                 .withParameters(params);
 
         return amazonSSM.sendCommand(sendCommandRequest);
+    }
+
+    private static boolean isNFSInstallSuccess(String commandId) throws InterruptedException {
+        boolean isSuccess = true;
+        ListCommandInvocationsRequest commandInvocationsRequest = new ListCommandInvocationsRequest()
+                .withCommandId(commandId)
+                .withDetails(true);
+
+        // let's sleep, so we have time to process the command
+        System.out.println("processing requests");
+        TimeUnit.MINUTES.sleep(3);
+
+        ListCommandInvocationsResult commandInvocationsResult = getSSMClient().listCommandInvocations(commandInvocationsRequest);
+        List<CommandInvocation> invocations = commandInvocationsResult.getCommandInvocations();
+        for (CommandInvocation invocation : invocations) {
+            String status = invocation.getStatus();
+
+            System.out.printf("install nfs-client on instance: %s is '%s'%n", invocation.getInstanceId(), status);
+            System.out.println(invocation.getCommandPlugins().get(0).getOutput());
+
+            // break on any unsuccessful status
+            if (!status.equals("Success")) {
+                isSuccess = false;
+            }
+        }
+        return isSuccess;
     }
 }
