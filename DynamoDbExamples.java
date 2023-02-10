@@ -16,12 +16,8 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.Iterator;
 
-/**
- * Hello world!
- *
- */
-public class App
-{
+
+public class App {
     public static void main( String[] args ) throws IOException {
         DynamoDB dynamoDB = getDynamoDB();
 //        loadMoviesData(dynamoDB);
