@@ -1,5 +1,6 @@
 package org.ddbninja;
 
+import com.amazonaws.ClientConfiguration;
 import com.amazonaws.regions.Regions;
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDB;
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDBClientBuilder;
@@ -49,11 +50,29 @@ public class App
             System.out.println("New Image: " + record.getDynamodb().getNewImage().toString());
             System.out.println();
         }
+
+        dynamoDB.shutdown();
+    }
+
+    /**
+     * Provides configuration setting for {@link AmazonDynamoDB} and {@link AmazonDynamoDBStreams}
+     * clients. Configurations come with default settings for SDK retry, error, and timeout logic, 
+     * as a few examples, though custom configurations provide a way to customize this SDK logic
+     * based on your application needs. 
+     * 
+     * @return custom {@link ClientConfiguration}
+     */
+    public static ClientConfiguration dynamoClientConfiguration() {
+        return new ClientConfiguration()
+                .withConnectionTimeout(120)
+                .withMaxErrorRetry(3)
+                .withThrottledRetries(true);
     }
 
     public static DynamoDB getDynamoDB() {
         AmazonDynamoDB ddbClient = AmazonDynamoDBClientBuilder.standard()
                 .withRegion(Regions.US_WEST_2)
+                .withClientConfiguration(dynamoClientConfiguration())
                 .build();
 
         return new DynamoDB(ddbClient);
@@ -62,6 +81,7 @@ public class App
     public static AmazonDynamoDBStreams getDynamoDbStreamsClient() {
         return AmazonDynamoDBStreamsClientBuilder.standard()
                 .withRegion(Regions.US_WEST_2)
+                .withClientConfiguration(dynamoClientConfiguration())
                 .build();
     }
 
@@ -104,7 +124,7 @@ public class App
     public static ItemCollection<QueryOutcome> queryMoviesTableByYear(DynamoDB dynamoDB, int year) {
         Table moviesTable = dynamoDB.getTable("Movies");
 
-        HashMap<String, String> nameMap = new HashMap<String, String>();
+        HashMap<String, String> nameMap = new HashMap<>();
         nameMap.put("#yr", "year");
 
         HashMap<String, Object> valueMap = new HashMap<String, Object>();
