@@ -20,10 +20,7 @@ import org.ddbninja.model.Movie;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
+import java.util.*;
 
 public class App
 {
@@ -59,10 +56,17 @@ public class App
         Movie movie = new Movie();
         movie.setYear(2011);
         movie.setTitle("2 Guns");
-//        movie.setYear(2023);
-//        movie.setTitle("Mastering the Art of Deception");
+
+        Movie movieUpdate = new Movie();
+        movieUpdate.setYear(2011);
+        movieUpdate.setTitle("2 Guns");
+
+        List<String> actors = new ArrayList<>(Arrays.asList("Mark Wahlberg", "Denzel Washington", "Paula Patton"));
+        movieUpdate.setActors(actors);
 
         reviewMovieItem(amazonDynamoDBClient, movie);
+        updateMovieItem(amazonDynamoDBClient, movieUpdate);
+        reviewMovieItem(amazonDynamoDBClient, movieUpdate);
 
         dynamoDB.shutdown();
         amazonDynamoDBClient.shutdown();
@@ -211,6 +215,25 @@ public class App
             }
         } catch (Exception e) {
             System.out.printf("Error querying movie: %s, %s%n", movieItem.getTitle(), e.getMessage());
+        }
+    }
+
+    /**
+     * Update a movie with the same HASH and RANGE keys, passing a {@link Movie} object with updated fields.
+     * {@link DynamoDBMapper#save(Object)} can take a {@link DynamoDBMapperConfig} that can change save pattern
+     * as {@link AmazonDynamoDB#putItem(PutItemRequest)} or {@link AmazonDynamoDB#updateItem(UpdateItemRequest)}.
+     *
+     * @param amazonDynamoDB {@link AmazonDynamoDB}
+     * @param movieItem {@link Movie} Object
+     */
+    public static void updateMovieItem(AmazonDynamoDB amazonDynamoDB, Movie movieItem) {
+        DynamoDBMapper mapper = new DynamoDBMapper(amazonDynamoDB);
+
+        try {
+            mapper.save(movieItem);
+            System.out.printf("Saved %s%n", movieItem.getTitle());
+        } catch (Exception e) {
+            System.out.printf("Error saving movie: %s, %s%n", movieItem.getTitle(), e.getMessage());
         }
     }
 }
