@@ -57,6 +57,10 @@ public class App
         movie.setYear(2011);
         movie.setTitle("2 Guns");
 
+        Movie movie2 = new Movie();
+        movie2.setYear(2023);
+        movie2.setTitle("Mastering the Art of Deception");
+
         Movie movieUpdate = new Movie();
         movieUpdate.setYear(2011);
         movieUpdate.setTitle("2 Guns");
@@ -67,6 +71,8 @@ public class App
         reviewMovieItem(amazonDynamoDBClient, movie);
         updateMovieItem(amazonDynamoDBClient, movieUpdate);
         reviewMovieItem(amazonDynamoDBClient, movieUpdate);
+
+        reviewMovieItems(amazonDynamoDBClient, new ArrayList<>(Arrays.asList(movie, movie2)));
 
         dynamoDB.shutdown();
         amazonDynamoDBClient.shutdown();
@@ -215,6 +221,29 @@ public class App
             }
         } catch (Exception e) {
             System.out.printf("Error querying movie: %s, %s%n", movieItem.getTitle(), e.getMessage());
+        }
+    }
+
+    public static void reviewMovieItems(AmazonDynamoDB amazonDynamoDBClient, List<Movie> movies) {
+        DynamoDBMapper mapper = new DynamoDBMapper(amazonDynamoDBClient);
+
+        try {
+            Map<String, List<Object>> items = mapper.batchLoad(movies);
+            List<Object> moviesList = items.get("Movies");
+
+            // supports type casting to original item class
+            for (Object obj : moviesList) {
+                Movie movie = (Movie) obj;
+                System.out.println("movie: " + movie.getTitle());
+                System.out.println("year: " + movie.getYear());
+                if (movie.getActors() != null) {
+                    System.out.println(movie.getTitle() + " has a list of actors: ");
+                    movie.getActors().forEach(actor -> System.out.println("actor: " + actor));
+                }
+            }
+
+        } catch (Exception e) {
+            System.out.println("error fetching movies: " + e.getMessage());
         }
     }
 
