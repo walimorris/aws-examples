@@ -1,9 +1,10 @@
 package org.ddbninja.model;
 
-import com.amazonaws.services.dynamodbv2.datamodeling.DynamoDBAttribute;
 import com.amazonaws.services.dynamodbv2.datamodeling.DynamoDBHashKey;
-import com.amazonaws.services.dynamodbv2.datamodeling.DynamoDBRangeKey;
 import com.amazonaws.services.dynamodbv2.datamodeling.DynamoDBTable;
+import com.amazonaws.services.dynamodbv2.datamodeling.DynamoDBRangeKey;
+import com.amazonaws.services.dynamodbv2.datamodeling.DynamoDBAttribute;
+import com.amazonaws.services.dynamodbv2.datamodeling.DynamoDBIndexHashKey;
 
 import java.util.List;
 
@@ -23,6 +24,7 @@ public class Movie {
         this.year = year;
     }
 
+    @DynamoDBIndexHashKey(globalSecondaryIndexName = "title-index")
     @DynamoDBRangeKey(attributeName = "title")
     public String getTitle() {
         return this.title;
