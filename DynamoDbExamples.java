@@ -94,6 +94,18 @@ public class App {
             System.out.println(m.getTitle());
         }
 
+        // After creating a global table, add item to base table and review replication
+        // Go further by deleting that item and reviewing the replication change, is the
+        // item deleted on the replicated tables. If so, was it fast?
+        Movie replicateMovie = new Movie();
+        replicateMovie.setYear(2023);
+        replicateMovie.setTitle("JUNG_E");
+        replicateMovie.setActors(new ArrayList<>(Arrays.asList("Kang Soo-yeon", "Kim Hyun-joo", "Ryu Kyung-soo", "Uhm Ji-won")));
+
+        // put the item if it does not exist
+        boolean loadedResult = putMovieItem(amazonDynamoDBClient, replicateMovie);
+        System.out.println(replicateMovie.getTitle() + " loaded = " + loadedResult);
+
         dynamoDB.shutdown();
         amazonDynamoDBClient.shutdown();
     }
@@ -287,6 +299,40 @@ public class App {
     }
 
     /**
+     * Puts a {@link Movie} Item to the Movies Table with a conditional save behavior of adding the movie only
+     * if the movie item is not present on the table. DynamoDB has added best practices embedded by having the
+     * default put item operation to update(overwrite) a matched item. This function goes further by adding a
+     * condition that checks if the item is present and if so, doesn't overwrite the item. Read Capacity Units
+     * are consumed, but this saves on Write Capacity Units from ignoring a update (overwrite) of an item.
+     *
+     * @param amazonDynamoDB {@link AmazonDynamoDB}
+     * @param movieItem {@link Movie}
+     *
+     * @return boolean
+     */
+    public static boolean putMovieItem(AmazonDynamoDB amazonDynamoDB, Movie movieItem) {
+        DynamoDBMapper mapper = new DynamoDBMapper(amazonDynamoDB);
+
+        DynamoDBMapperConfig config = DynamoDBMapperConfig.builder()
+                .withSaveBehavior(DynamoDBMapperConfig.SaveBehavior.PUT)
+                .build();
+
+        try {
+            Movie result = loadMovieByYear(amazonDynamoDB, movieItem);
+            if (result == null) {
+                mapper.save(movieItem, config);
+            } else {
+                System.out.printf("Movie: %s, exists in table.%n", movieItem.getTitle());
+                return false;
+            }
+        } catch (Exception e) {
+            System.out.printf("Error saving movie: %s, %s%n", movieItem.getTitle(), e.getMessage());
+            return false;
+        }
+        return true;
+    }
+
+    /**
      * <p>
      * Queries the {@link Movie} table using movie title by querying from the table's global
      * secondary index by using {@link DynamoDBQueryExpression#withIndexName(String)} function.
@@ -314,14 +360,14 @@ public class App {
     }
 
     /**
-     * Queries the {@link Movie} table by year utilizing the HASH KEY of a {@link Movie} object. 
-     * This allows the function to query all movies by year and sets a limit of 10 return items. 
-     * The {@link DynamoDBMapper} assists with querying by mapping the results to the given 
+     * Queries the {@link Movie} table by year utilizing the HASH KEY of a {@link Movie} object.
+     * This allows the function to query all movies by year and sets a limit of 10 return items.
+     * The {@link DynamoDBMapper} assists with querying by mapping the results to the given
      * class passed to the {@link DynamoDBMapper#query(Class, DynamoDBQueryExpression)} function.
-     * 
+     *
      * @param amazonDynamoDB {@link AmazonDynamoDB} client
-     * @param year int 
-     *             
+     * @param year int
+     *
      * @return {@link List}
      */
     public static List<Movie> queryMoviesByYear(AmazonDynamoDB amazonDynamoDB, int year) {
@@ -337,5 +383,10 @@ public class App {
                 .withConsistentRead(false);
 
         return mapper.query(Movie.class, queryExpression);
+    }
+
+    public static Movie loadMovieByYear(AmazonDynamoDB amazonDynamoDB, Movie movieItem) {
+        DynamoDBMapper mapper = new DynamoDBMapper(amazonDynamoDB);
+        return mapper.load(movieItem);
     }
 }
