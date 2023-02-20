@@ -8,6 +8,7 @@ import com.amazonaws.services.dynamodbv2.AmazonDynamoDBStreams;
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDBStreamsClientBuilder;
 import com.amazonaws.services.dynamodbv2.datamodeling.DynamoDBMapper;
 import com.amazonaws.services.dynamodbv2.datamodeling.DynamoDBMapperConfig;
+import com.amazonaws.services.dynamodbv2.datamodeling.DynamoDBQueryExpression;
 import com.amazonaws.services.dynamodbv2.document.*;
 import com.amazonaws.services.dynamodbv2.document.spec.QuerySpec;
 import com.amazonaws.services.dynamodbv2.model.*;
@@ -22,8 +23,11 @@ import java.io.File;
 import java.io.IOException;
 import java.util.*;
 
-public class App
-{
+public class App {
+
+    public static final String TITLE_INDEX = "title-index";
+    public static final String MOVIES_TABLE = "Movies";
+
     public static void main( String[] args ) throws IOException {
         DynamoDB dynamoDB = getDynamoDB();
         AmazonDynamoDB amazonDynamoDBClient = getAmazonDynamoDBClient();
@@ -33,15 +37,15 @@ public class App
 //        System.out.println("Movie batch write result: " + moviesBatchWriteItemResult.toString());
 //        System.out.println("Movie batch write result consumed capacity: " + moviesBatchWriteItemResult.getConsumedCapacity());
 
-        ItemCollection<QueryOutcome> moviesFrom2023 = queryMoviesTableByYear(dynamoDB, 2023);
-
-        try {
-            moviesFrom2023.forEach(item -> {
-                System.out.println(item.getNumber("year") + ": " + item.getString("title"));
-            });
-        } catch (Exception e) {
-            System.err.println("Unable to query movies from year 2023: " + e.getMessage());
-        }
+//        ItemCollection<QueryOutcome> moviesFrom2023 = queryMoviesTableByYear(dynamoDB, 2023);
+//
+//        try {
+//            moviesFrom2023.forEach(item -> {
+//                System.out.println(item.getNumber("year") + ": " + item.getString("title"));
+//            });
+//        } catch (Exception e) {
+//            System.err.println("Unable to query movies from year 2023: " + e.getMessage());
+//        }
 
 //        String shareIterator = getDynamoDBStreamShardsIterator(getDynamoDbStreamsClient(), "Movies");
 //        List<Record> records = getStreamShardRecords(getDynamoDbStreamsClient(), shareIterator);
@@ -53,26 +57,42 @@ public class App
 //            System.out.println();
 //        }
 
+//        Movie movie = new Movie();
+//        movie.setYear(2011);
+//        movie.setTitle("2 Guns");
+//
+//        Movie movie2 = new Movie();
+//        movie2.setYear(2023);
+//        movie2.setTitle("Mastering the Art of Deception");
+//
+//        Movie movieUpdate = new Movie();
+//        movieUpdate.setYear(2011);
+//        movieUpdate.setTitle("2 Guns");
+//
+//        List<String> actors = new ArrayList<>(Arrays.asList("Mark Wahlberg", "Denzel Washington", "Paula Patton"));
+//        movieUpdate.setActors(actors);
+//
+//        reviewMovieItem(amazonDynamoDBClient, movie);
+//        updateMovieItem(amazonDynamoDBClient, movieUpdate);
+//        reviewMovieItem(amazonDynamoDBClient, movieUpdate);
+//
+//        reviewMovieItems(amazonDynamoDBClient, new ArrayList<>(Arrays.asList(movie, movie2)));
+
+        // example querying a global secondary index by only supplying the index's HASH Key
+        // This returns a Movie object along with the projected attributes from the base table
         Movie movie = new Movie();
-        movie.setYear(2011);
         movie.setTitle("2 Guns");
 
-        Movie movie2 = new Movie();
-        movie2.setYear(2023);
-        movie2.setTitle("Mastering the Art of Deception");
+        Movie result = queryMovieByTitle(amazonDynamoDBClient, movie);
+        System.out.println(result.getTitle());
+        System.out.println(result.getYear());
+        System.out.println(result.getActors().toString());
 
-        Movie movieUpdate = new Movie();
-        movieUpdate.setYear(2011);
-        movieUpdate.setTitle("2 Guns");
-
-        List<String> actors = new ArrayList<>(Arrays.asList("Mark Wahlberg", "Denzel Washington", "Paula Patton"));
-        movieUpdate.setActors(actors);
-
-        reviewMovieItem(amazonDynamoDBClient, movie);
-        updateMovieItem(amazonDynamoDBClient, movieUpdate);
-        reviewMovieItem(amazonDynamoDBClient, movieUpdate);
-
-        reviewMovieItems(amazonDynamoDBClient, new ArrayList<>(Arrays.asList(movie, movie2)));
+        List<Movie> queryResult = queryMoviesByYear(amazonDynamoDBClient, 2023);
+        System.out.println("results:");
+        for (Movie m : queryResult) {
+            System.out.println(m.getTitle());
+        }
 
         dynamoDB.shutdown();
         amazonDynamoDBClient.shutdown();
@@ -231,7 +251,7 @@ public class App
             Map<String, List<Object>> items = mapper.batchLoad(movies);
             List<Object> moviesList = items.get("Movies");
 
-            // supports type casting to original item class
+            // supports type casting to original class
             for (Object obj : moviesList) {
                 Movie movie = (Movie) obj;
                 System.out.println("movie: " + movie.getTitle());
@@ -264,5 +284,58 @@ public class App
         } catch (Exception e) {
             System.out.printf("Error saving movie: %s, %s%n", movieItem.getTitle(), e.getMessage());
         }
+    }
+
+    /**
+     * <p>
+     * Queries the {@link Movie} table using movie title by querying from the table's global
+     * secondary index by using {@link DynamoDBQueryExpression#withIndexName(String)} function.
+     * <p>
+     * Further, the secondary index HASH and/or RANGE key(s) must be properly annotated in
+     * the underlying {@link Movie} object model.
+     *
+     * @see Movie
+     *
+     * @param amazonDynamoDB {@link AmazonDynamoDB} client
+     * @param movieItem {@link Movie}
+     *
+     * @return {@link Movie} and projected attributes
+     */
+    public static Movie queryMovieByTitle(AmazonDynamoDB amazonDynamoDB, Movie movieItem) {
+        DynamoDBMapper mapper = new DynamoDBMapper(amazonDynamoDB);
+
+        DynamoDBQueryExpression<Movie> queryExpression = new DynamoDBQueryExpression<Movie>()
+                .withHashKeyValues(movieItem)
+                .withLimit(1)
+                .withIndexName(TITLE_INDEX)
+                .withConsistentRead(false);
+
+        return mapper.query(Movie.class, queryExpression).get(0);
+    }
+
+    /**
+     * Queries the {@link Movie} table by year utilizing the HASH KEY of a {@link Movie} object. 
+     * This allows the function to query all movies by year and sets a limit of 10 return items. 
+     * The {@link DynamoDBMapper} assists with querying by mapping the results to the given 
+     * class passed to the {@link DynamoDBMapper#query(Class, DynamoDBQueryExpression)} function.
+     * 
+     * @param amazonDynamoDB {@link AmazonDynamoDB} client
+     * @param year int 
+     *             
+     * @return {@link List}
+     */
+    public static List<Movie> queryMoviesByYear(AmazonDynamoDB amazonDynamoDB, int year) {
+        DynamoDBMapper mapper = new DynamoDBMapper(amazonDynamoDB);
+
+        // movie with HASH value
+        Movie movie = new Movie();
+        movie.setYear(year);
+
+        DynamoDBQueryExpression<Movie> queryExpression = new DynamoDBQueryExpression<Movie>()
+                .withHashKeyValues(movie)
+                .withLimit(10)
+                .withConsistentRead(false);
+
+        return mapper.query(Movie.class, queryExpression);
     }
 }
