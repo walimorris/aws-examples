@@ -17,7 +17,9 @@ import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.sun.istack.internal.NotNull;
 import org.ddbninja.model.Movie;
+import org.ddbninja.model.Streams;
 
 import java.io.File;
 import java.io.IOException;
@@ -27,6 +29,7 @@ public class App {
 
     public static final String TITLE_INDEX = "title-index";
     public static final String MOVIES_TABLE = "Movies";
+    public static final String STREAMS_TABLE = "streams-table";
 
     public static void main( String[] args ) throws IOException {
         DynamoDB dynamoDB = getDynamoDB();
@@ -80,31 +83,46 @@ public class App {
 
         // example querying a global secondary index by only supplying the index's HASH Key
         // This returns a Movie object along with the projected attributes from the base table
-        Movie movie = new Movie();
-        movie.setTitle("2 Guns");
+//        Movie movie = new Movie();
+//        movie.setTitle("2 Guns");
+//
+//        Movie result = queryMovieByTitle(amazonDynamoDBClient, movie);
+//        System.out.println(result.getTitle());
+//        System.out.println(result.getYear());
+//        System.out.println(result.getActors().toString());
+//
+//        List<Movie> queryResult = queryMoviesByYear(amazonDynamoDBClient, 2023);
+//        System.out.println("results:");
+//        for (Movie m : queryResult) {
+//            System.out.println(m.getTitle());
+//        }
+//
+//        // After creating a global table, add item to base table and review replication
+//        // Go further by deleting that item and reviewing the replication change, is the
+//        // item deleted on the replicated tables. If so, was it fast?
+//        Movie replicateMovie = new Movie();
+//        replicateMovie.setYear(2023);
+//        replicateMovie.setTitle("JUNG_E");
+//        replicateMovie.setActors(new ArrayList<>(Arrays.asList("Kang Soo-yeon", "Kim Hyun-joo", "Ryu Kyung-soo", "Uhm Ji-won")));
+//
+//        // put the item if it does not exist
+//        boolean loadedResult = putMovieItem(amazonDynamoDBClient, replicateMovie);
+//        System.out.println(replicateMovie.getTitle() + " loaded = " + loadedResult);
 
-        Movie result = queryMovieByTitle(amazonDynamoDBClient, movie);
-        System.out.println(result.getTitle());
-        System.out.println(result.getYear());
-        System.out.println(result.getActors().toString());
+//        List<Movie> moviesByYearAndFirstLetterResult = queryMoviesByYear(amazonDynamoDBClient, 2023);
+//        System.out.println(moviesByYearAndFirstLetterResult.size());
 
-        List<Movie> queryResult = queryMoviesByYear(amazonDynamoDBClient, 2023);
-        System.out.println("results:");
-        for (Movie m : queryResult) {
-            System.out.println(m.getTitle());
-        }
+//        Streams streamsItem = new Streams();
+//        streamsItem.setMachineId(654321);
+//        streamsItem.setMachineType("Adafruit");
+//
+//        Streams streamsItemResult = loadStreamsItemByMachineIdAndType(amazonDynamoDBClient, streamsItem);
+//        System.out.printf("MachineId=%d, MachineType=%s, Temperature=%s%n", streamsItemResult.getMachineId(), streamsItemResult.getMachineType(), streamsItemResult.getTemperature());
+//        boolean gsiCreated = createGlobalSecondaryIndexOnStreamsTable(amazonDynamoDBClient, "temperature", null);
+//        System.out.println("GSI Created: " + gsiCreated);
 
-        // After creating a global table, add item to base table and review replication
-        // Go further by deleting that item and reviewing the replication change, is the
-        // item deleted on the replicated tables. If so, was it fast?
-        Movie replicateMovie = new Movie();
-        replicateMovie.setYear(2023);
-        replicateMovie.setTitle("JUNG_E");
-        replicateMovie.setActors(new ArrayList<>(Arrays.asList("Kang Soo-yeon", "Kim Hyun-joo", "Ryu Kyung-soo", "Uhm Ji-won")));
-
-        // put the item if it does not exist
-        boolean loadedResult = putMovieItem(amazonDynamoDBClient, replicateMovie);
-        System.out.println(replicateMovie.getTitle() + " loaded = " + loadedResult);
+        // forced Exception
+        boolean gsi2Created = createGlobalSecondaryIndexOnStreamsTable(amazonDynamoDBClient, null, null);
 
         dynamoDB.shutdown();
         amazonDynamoDBClient.shutdown();
@@ -380,6 +398,23 @@ public class App {
         DynamoDBQueryExpression<Movie> queryExpression = new DynamoDBQueryExpression<Movie>()
                 .withHashKeyValues(movie)
                 .withLimit(10)
+                .withReturnConsumedCapacity(ReturnConsumedCapacity.TOTAL)
+                .withConsistentRead(false);
+
+        return mapper.query(Movie.class, queryExpression);
+    }
+
+    public static List<Movie> queryMoviesByYearAndFirstLetter(AmazonDynamoDB amazonDynamoDB, int year, String character) {
+        DynamoDBMapper mapper = new DynamoDBMapper(amazonDynamoDB);
+
+        Movie movie = new Movie();
+        movie.setYear(year);
+
+        DynamoDBQueryExpression<Movie> queryExpression = new DynamoDBQueryExpression<Movie>()
+                .withHashKeyValues(movie)
+                .withKeyConditionExpression("#title EQUALS :" + character)
+                .withLimit(10)
+                .withReturnConsumedCapacity(ReturnConsumedCapacity.TOTAL)
                 .withConsistentRead(false);
 
         return mapper.query(Movie.class, queryExpression);
@@ -388,5 +423,63 @@ public class App {
     public static Movie loadMovieByYear(AmazonDynamoDB amazonDynamoDB, Movie movieItem) {
         DynamoDBMapper mapper = new DynamoDBMapper(amazonDynamoDB);
         return mapper.load(movieItem);
+    }
+
+    /**
+     * Creates a Global Secondary Index on the Streams Table given a hash-key and optional range-key.
+     *
+     * @param amazonDynamoDB {@link AmazonDynamoDB}
+     * @param hashKey index hash-key value
+     * @param rangeKey optional range-key value
+     *
+     * @return boolean
+     */
+    public static boolean createGlobalSecondaryIndexOnStreamsTable(AmazonDynamoDB amazonDynamoDB, @NotNull String hashKey, String rangeKey) throws IOException {
+        if (hashKey == null) {
+            throw new IOException("GSI Hashkey must have an explicit value and can not be null");
+        }
+
+        UpdateTableResult updateTableResult;
+        try {
+
+            // assign the key schema for the secondary index
+            ArrayList<KeySchemaElement> indexKeySchema = new ArrayList<>();
+            indexKeySchema.add(new KeySchemaElement().withAttributeName(hashKey).withKeyType(KeyType.HASH));
+            if (rangeKey != null) {
+                indexKeySchema.add(new KeySchemaElement().withAttributeName(rangeKey).withKeyType(KeyType.RANGE));
+            }
+
+            // Add the current attribute definitions in the update
+            ArrayList<AttributeDefinition> indexAttributeDefinitions = new ArrayList<>();
+            indexAttributeDefinitions.add(new AttributeDefinition().withAttributeName("temperature").withAttributeType(ScalarAttributeType.S));
+            indexAttributeDefinitions.add(new AttributeDefinition().withAttributeName("machineId").withAttributeType(ScalarAttributeType.N));
+            indexAttributeDefinitions.add(new AttributeDefinition().withAttributeName("machineType").withAttributeType(ScalarAttributeType.S));
+
+            CreateGlobalSecondaryIndexAction globalSecondaryIndex = new CreateGlobalSecondaryIndexAction()
+                    .withIndexName("temperature-index")
+                    .withKeySchema(indexKeySchema)
+                    .withProjection(new Projection().withProjectionType(ProjectionType.INCLUDE).withNonKeyAttributes("machineId", "machineType"))
+                    .withProvisionedThroughput(new ProvisionedThroughput().withReadCapacityUnits(1L).withWriteCapacityUnits(1L));
+
+            GlobalSecondaryIndexUpdate globalSecondaryIndexUpdate = new GlobalSecondaryIndexUpdate();
+            globalSecondaryIndexUpdate.setCreate(globalSecondaryIndex);
+
+            UpdateTableRequest updateTableRequest = new UpdateTableRequest()
+                    .withTableName(STREAMS_TABLE)
+                    .withGlobalSecondaryIndexUpdates(globalSecondaryIndexUpdate)
+                    .withAttributeDefinitions(indexAttributeDefinitions);
+
+            updateTableResult = amazonDynamoDB.updateTable(updateTableRequest);
+        } catch (Exception e) {
+            System.out.println("Error creating GSI on Streams Table: " + e.getMessage());
+            return false;
+        }
+        System.out.println(updateTableResult.getTableDescription());
+        return true;
+    }
+
+    public static Streams loadStreamsItemByMachineIdAndType(AmazonDynamoDB amazonDynamoDB, Streams streamsItem) {
+        DynamoDBMapper mapper = new DynamoDBMapper(amazonDynamoDB);
+        return  mapper.load(streamsItem);
     }
 }
