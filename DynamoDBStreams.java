@@ -17,7 +17,12 @@ import java.util.Map;
  * temperature updates and records the new data points in the stream. This triggers a lambda function
  * which then reports the temperature state of the thing. In a more elaborate process, this lambda
  * function could do more: send notification to technicians, shutdown a thing, start an internal fan
- * and so on. Below are the steps.
+ * and so on.
+ * 
+ * This can scale to many thing items in a DDB Table as the Lambda function will trigger
+ * individually and allow you to follow up with any processes based on temperature value.
+ * 
+ * Below are the steps.
  * <P>
  *     1. Create the table with some test data, the primary key and attributes.
  *     2. Create a Lambda function with the business logic and provide attach
