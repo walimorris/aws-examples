@@ -9,6 +9,7 @@ import com.amazonaws.services.dynamodbv2.AmazonDynamoDBStreamsClientBuilder;
 import com.amazonaws.services.dynamodbv2.datamodeling.DynamoDBMapper;
 import com.amazonaws.services.dynamodbv2.datamodeling.DynamoDBMapperConfig;
 import com.amazonaws.services.dynamodbv2.datamodeling.DynamoDBQueryExpression;
+import com.amazonaws.services.dynamodbv2.datamodeling.PaginatedQueryList;
 import com.amazonaws.services.dynamodbv2.document.*;
 import com.amazonaws.services.dynamodbv2.document.spec.QuerySpec;
 import com.amazonaws.services.dynamodbv2.model.*;
@@ -121,8 +122,17 @@ public class App {
 //        boolean gsiCreated = createGlobalSecondaryIndexOnStreamsTable(amazonDynamoDBClient, "temperature", null);
 //        System.out.println("GSI Created: " + gsiCreated);
 
-        // forced Exception
-        boolean gsi2Created = createGlobalSecondaryIndexOnStreamsTable(amazonDynamoDBClient, null, null);
+//        // forced Exception
+//        boolean gsi2Created = createGlobalSecondaryIndexOnStreamsTable(amazonDynamoDBClient, null, null);
+
+        Streams streamItem = new Streams();
+        streamItem.setTemperature("66.4");
+        PaginatedQueryList<Streams> queryListResult = queryStreamsTemperatureIndexByTemperature(amazonDynamoDBClient, streamItem);
+
+        System.out.println(queryListResult.size());
+        queryListResult.forEach((result -> {
+            System.out.println("machineId=" + result.getMachineId() + " machineType=" + result.getMachineType() + " temperature=" + result.getTemperature());
+        }));
 
         dynamoDB.shutdown();
         amazonDynamoDBClient.shutdown();
@@ -476,6 +486,27 @@ public class App {
         }
         System.out.println(updateTableResult.getTableDescription());
         return true;
+    }
+
+    /**
+     * Provides a method to query the Streams Table temperature-index by supplying a {@link Streams} model 
+     * with a set temperature value. 
+     * 
+     * @param amazonDynamoDB {@link AmazonDynamoDB}
+     * @param streamsItem {@link Streams}
+     * 
+     * @return {@link PaginatedQueryList}
+     */
+    public static PaginatedQueryList<Streams> queryStreamsTemperatureIndexByTemperature(AmazonDynamoDB amazonDynamoDB, Streams streamsItem) {
+        DynamoDBMapper mapper = new DynamoDBMapper(amazonDynamoDB);
+
+        DynamoDBQueryExpression<Streams> queryExpression = new DynamoDBQueryExpression<Streams>()
+                .withIndexName("temperature-index")
+                .withHashKeyValues(streamsItem)
+                .withLimit(10)
+                .withConsistentRead(false);
+
+        return mapper.query(Streams.class, queryExpression);
     }
 
     public static Streams loadStreamsItemByMachineIdAndType(AmazonDynamoDB amazonDynamoDB, Streams streamsItem) {
