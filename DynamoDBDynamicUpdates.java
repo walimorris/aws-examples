@@ -41,10 +41,12 @@ public class SendTemperature {
             temperature = requestParameters.get(TEMPERATURE);
 
             isMachineUpdated = updateMachineAttributes(amazonDynamoDB, machineName, machineType, temperature, logger);
+        } else {
+            logger.log("QueryString Parameters are null");
         }
         logger.log("Machine has been added to DDB Streams table: " + isMachineUpdated);
         amazonDynamoDB.shutdown();
-        return "success";
+        return "success\n";
     }
 
     private int generateRandomId() {
@@ -78,7 +80,7 @@ public class SendTemperature {
                 .build();
     }
 
-    public Streams queryStreamsItemByMachineName(AmazonDynamoDB amazonDynamoDB, String machineName) {
+    public Streams queryStreamsItemByMachineName(AmazonDynamoDB amazonDynamoDB, String machineName, LambdaLogger logger) {
         DynamoDBMapper mapper = new DynamoDBMapper(amazonDynamoDB);
 
         Streams streamsItem = new Streams();
@@ -89,30 +91,40 @@ public class SendTemperature {
                 .withHashKeyValues(streamsItem)
                 .withIndexName(MACHINE_NAME_INDEX);
 
-        return mapper.query(Streams.class, queryExpression).get(0);
+        try {
+            return mapper.query(Streams.class, queryExpression).get(0);
+        } catch (Exception e) {
+
+            /*
+            Return a generic Streams Object if the queried Item is not found on the machine-name-index.
+            This signifies that the Item doesn't exist and allows us to create it from this empty
+            Streams object
+             */
+            logger.log("Error querying " + machineName + " on the " + MACHINE_NAME_INDEX);
+            return new Streams();
+        }
     }
 
     public boolean updateMachineAttributes(AmazonDynamoDB amazonDynamoDB, String machineName, String machineType,
                                            String temperature, LambdaLogger logger) {
 
         DynamoDBMapper mapper = new DynamoDBMapper(amazonDynamoDB);
-        Streams streamsItemResult = queryStreamsItemByMachineName(amazonDynamoDB, machineName);
+        Streams streamsItemResult = queryStreamsItemByMachineName(amazonDynamoDB, machineName, logger);
 
         int machineId;
-        if (streamsItemResult != null) {
+        if (streamsItemResult.getMachineId() != - 1) {
             machineId = streamsItemResult.getMachineId();
         } else {
             machineId = generateRandomId();
+            streamsItemResult.setMachineId(machineId);
+            streamsItemResult.setMachineName(machineName);
+            streamsItemResult.setMachineType(machineType);
         }
+        streamsItemResult.setTemperature(temperature);
+        logger.log("MachineId=" + machineId);
 
         try {
-            Streams streamsItem = new Streams();
-            streamsItem.setMachineId(machineId);
-            streamsItem.setMachineName(machineName);
-            streamsItem.setMachineType(machineType);
-            streamsItem.setTemperature(temperature);
-
-            mapper.save(streamsItem);
+            mapper.save(streamsItemResult);
         } catch (Exception e) {
             logger.log("Error updating Streams Item with machine name " + machineName + ": " + e.getMessage());
             return false;
