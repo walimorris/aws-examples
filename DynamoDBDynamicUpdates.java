@@ -133,3 +133,4 @@ public class SendTemperature {
         return true;
     }
 }
+
