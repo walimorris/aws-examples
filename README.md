@@ -1,2 +1,2 @@
 # AWSExamples
-Various AWS code examples for future reference
+Various AWS code samples (S3, Lambda, API Gateway, StepFunctions, EC2, and more)
